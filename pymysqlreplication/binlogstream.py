@@ -332,6 +332,40 @@ class BinLogStreamReader(object):
             return False
         return True
 
+    def _get_mysql_version_tuple(self):
+        """Return (major, minor) from server version for version-aware SQL dispatch.
+        Cached per connection. MySQL 8.4+ uses SHOW BINARY LOG STATUS, RESET BINARY LOGS AND GTIDS.
+        """
+        if getattr(self, "_mysql_version_tuple", None) is not None:
+            return self._mysql_version_tuple
+
+        cur = self._stream_connection.cursor()
+        cur.execute("SELECT VERSION()")
+        full_version = cur.fetchone()[0]
+        cur.close()
+
+        version_str = full_version.split("-")[0]
+        self._server_version_full = full_version
+        parts = version_str.split(".")
+
+        major = int(parts[0]) if len(parts) > 0 else 0
+        minor = int(parts[1]) if len(parts) > 1 else 0
+
+        self._mysql_version_tuple = (major, minor)
+        return self._mysql_version_tuple
+
+    def _is_mysql84_or_more(self):
+        """True if server is MySQL 8.4+ (non-MariaDB). Used for SQL statement selection.
+        MariaDB uses SHOW MASTER STATUS, not SHOW BINARY LOG STATUS, so we detect it
+        from the version string and return False for MariaDB regardless of is_mariadb flag.
+        """
+        if self.is_mariadb:
+            return False
+        major, minor = self._get_mysql_version_tuple()
+        if "MariaDB" in self._server_version_full:
+            return False
+        return (major > 8) or (major == 8 and minor >= 4)
+
     def _register_slave(self):
         if not self.report_slave:
             return
@@ -352,15 +386,20 @@ class BinLogStreamReader(object):
         # flags (2) BINLOG_DUMP_NON_BLOCK (0 or 1)
         # server_id (4) -- server id of this slave
         # log_file (string.EOF) -- filename of the binlog on the master
+        self._mysql_version_tuple = None
         self._stream_connection = self.pymysql_wrapper(**self.__connection_settings)
 
         self.__use_checksum = self.__checksum_enabled()
 
         # If checksum is enabled we need to inform the server about the that
         # we support it
+        # Set both @master_* and @source_* for MySQL 8.0/8.4 compatibility
         if self.__use_checksum:
             cur = self._stream_connection.cursor()
-            cur.execute("SET @master_binlog_checksum= @@global.binlog_checksum")
+            cur.execute(
+                "SET @master_binlog_checksum= @@global.binlog_checksum, "
+                "@source_binlog_checksum= @@global.binlog_checksum"
+            )
             cur.close()
 
         if self.slave_uuid:
@@ -381,9 +420,13 @@ class BinLogStreamReader(object):
                 heartbeat = 4294967
 
             # master_heartbeat_period is nanoseconds
+            # Set both @master_* and @source_* for MySQL 8.0/8.4 compatibility
             heartbeat = int(heartbeat * 1000000000)
             cur = self._stream_connection.cursor()
-            cur.execute("SET @master_heartbeat_period = %s", (heartbeat,))
+            cur.execute(
+                "SET @master_heartbeat_period = %s, @source_heartbeat_period = %s",
+                (heartbeat, heartbeat),
+            )
             cur.close()
 
         # When replicating from Mariadb 10.6.12 using binlog coordinates, a slave capability < 4 triggers a bug in
@@ -404,7 +447,10 @@ class BinLogStreamReader(object):
                 # valid, if not, get the current position from master
                 if self.log_file is None or self.log_pos is None:
                     cur = self._stream_connection.cursor()
-                    cur.execute("SHOW MASTER STATUS")
+                    if self._is_mysql84_or_more():
+                        cur.execute("SHOW BINARY LOG STATUS")
+                    else:
+                        cur.execute("SHOW MASTER STATUS")
                     master_status = cur.fetchone()
                     if master_status is None:
                         raise BinLogNotEnabled()

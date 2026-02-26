@@ -16,6 +16,18 @@ def execute(con, query):
     return c
 
 
+def _is_mysql84_or_more(conn):
+    """True if server is MySQL 8.4+ (non-MariaDB)."""
+    full_version = execute(conn, "SELECT VERSION()").fetchone()[0]
+    if "MariaDB" in full_version:
+        return False
+    version_str = full_version.split("-")[0]
+    parts = version_str.split(".")
+    major = int(parts[0]) if len(parts) > 0 else 0
+    minor = int(parts[1]) if len(parts) > 1 else 0
+    return (major > 8) or (major == 8 and minor >= 4)
+
+
 def consume_events():
     stream = BinLogStreamReader(
         connection_settings=database,
@@ -53,7 +65,10 @@ execute(conn, "CREATE TABLE test (i INT) ENGINE = MEMORY")
 execute(conn, "INSERT INTO test VALUES(1)")
 execute(conn, "CREATE TABLE test2 (i INT) ENGINE = MEMORY")
 execute(conn, "INSERT INTO test2 VALUES(1)")
-execute(conn, "RESET MASTER")
+if _is_mysql84_or_more(conn):
+    execute(conn, "RESET BINARY LOGS AND GTIDS")
+else:
+    execute(conn, "RESET MASTER")
 
 
 if os.fork() != 0:

@@ -36,7 +36,7 @@ https://github.com/julien-duponchelle/python-mysql-replication/discussions
 The project is test with:
 
 - MySQL 5.5, 5.6 and 5.7 (v0.1 ~ v0.45)
-- MySQL 8.0.14 (v1.0 ~)
+- MySQL 8.0.14 and 8.4 (v1.0 ~)
 - MariaDB 10.6
 - Python 3.10 - 3.14
 - PyPy 3.7, 3.9 (really faster than the standard Python interpreter)

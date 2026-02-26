@@ -28,7 +28,7 @@ class PyMySQLReplicationTestCase(base):
     @pytest.fixture(autouse=True)
     def setUpDatabase(self, get_db):
         databases = get_databases()
-        # For local testing, set the get_dbms parameter to one of the following values: 'mysql-5', 'mysql-8', mariadb-10'.
+        # For local testing, set the get_db parameter to one of: 'mysql-5', 'mysql-8', 'mysql-8.4', 'mariadb-10'.
         # This value should correspond to the desired database configuration specified in the 'config.json' file.
         self.database = databases[get_db]
         """
@@ -46,6 +46,7 @@ class PyMySQLReplicationTestCase(base):
     def setUp(self, charset="utf8"):
         # default
         self.conn_control = None
+        self.__is_mariaDB = None
 
         for i in ['host', 'port']:
             env_override = self.database.pop(f'{i}_env_override', None)
@@ -67,7 +68,6 @@ class PyMySQLReplicationTestCase(base):
         self.connect_conn_control(db)
         self.stream = None
         self.resetBinLog()
-        self.__is_mariaDB = None
         self.isMySQL56AndMore()
 
     def getMySQLVersion(self):
@@ -120,6 +120,15 @@ class PyMySQLReplicationTestCase(base):
             return True
         return version == 8.0 and version_detail >= 16
 
+    def isMySQL84AndMore(self):
+        if self.isMariaDB():
+            return False
+        version_str = self.getMySQLVersion()
+        parts = version_str.split(".")
+        major = int(parts[0]) if len(parts) > 0 else 0
+        minor = int(parts[1]) if len(parts) > 1 else 0
+        return (major > 8) or (major == 8 and minor >= 4)
+
     def isMariaDB(self):
         if self.__is_mariaDB is None:
             self.__is_mariaDB = (
@@ -155,11 +164,17 @@ class PyMySQLReplicationTestCase(base):
         return c
 
     def resetBinLog(self):
-        self.execute("RESET MASTER")
+        if self.isMySQL84AndMore():
+            self.execute("RESET BINARY LOGS AND GTIDS")
+        else:
+            self.execute("RESET MASTER")
         if self.stream is not None:
             self.stream.close()
         self.stream = BinLogStreamReader(
-            self.database, server_id=1024, ignored_events=self.ignoredEvents()
+            self.database,
+            server_id=1024,
+            ignored_events=self.ignoredEvents(),
+            is_mariadb=self.isMariaDB(),
         )
 
     def set_sql_mode(self):

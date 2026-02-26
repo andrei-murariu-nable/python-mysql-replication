@@ -38,7 +38,11 @@ jobs:
 
           while :
           do
-            if mysql -h 127.0.0.1 --user=root --execute "SELECT version();" 2>&1 >/dev/null && mysql -h 127.0.0.1 --port=3307 --user=root --execute "SELECT version();" 2>&1 >/dev/null; then
+            if mysql -h 127.0.0.1 --user=root --execute "SELECT version();" 2>&1 >/dev/null \
+              && mysql -h 127.0.0.1 --port=3307 --user=root --execute "SELECT version();" 2>&1 >/dev/null \
+              && mysql -h 127.0.0.1 --port=3308 --user=root --execute "SELECT version();" 2>&1 >/dev/null \
+              && mysql -h 127.0.0.1 --port=3309 --user=root --execute "SELECT version();" 2>&1 >/dev/null \
+              && mysql -h 127.0.0.1 --port=3310 --user=root --execute "SELECT version();" 2>&1 >/dev/null; then
               break
             fi
             sleep 1
@@ -58,6 +62,10 @@ jobs:
       - name: Run tests for mysql-8
         working-directory: pymysqlreplication/tests
         run: pytest -k "$PYTEST_SKIP_OPTION" --db=mysql-8
+
+      - name: Run tests for mysql-8.4
+        working-directory: pymysqlreplication/tests
+        run: pytest -k "$PYTEST_SKIP_OPTION" --db=mysql-8.4
 
       - name: Run tests for mariadb-10
         working-directory: pymysqlreplication/tests

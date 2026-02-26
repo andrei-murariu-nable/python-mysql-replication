@@ -3,6 +3,7 @@ import time
 import unittest
 from unittest.mock import patch
 
+import pymysql
 from pymysql.protocol import MysqlPacket
 
 from pymysqlreplication import BinLogStreamReader
@@ -144,7 +145,8 @@ class TestBasicBinLogStreamReader(base.PyMySQLReplicationTestCase):
         self.assertIsInstance(event, QueryEvent)
         self.assertEqual(event.query, query)
 
-        self.conn_control.kill(self.stream._stream_connection.thread_id())
+        thread_id = self.stream._stream_connection.thread_id()
+        self.execute(f"KILL {thread_id}")
         for i in range(0, 10000):
             event = self.stream.fetchone()
             self.assertIsNotNone(event)

@@ -39,6 +39,12 @@ services:
     ports:
       - "3309:3306"
 
+  mysql-8.4:
+    <<: *mysql
+    image: mysql:8.4
+    ports:
+      - "3310:3306"
+
   mariadb-10.6:
     <<: *mariadb
     image: mariadb:10.6
